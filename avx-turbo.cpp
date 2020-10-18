@@ -60,6 +60,7 @@ struct test_func {
     ISA isa;
 };
 
+std::vector<int> cpu_affinity;
 
 #define FUNCS_X(x) \
     x(pause_only          , "pause instruction"              , BASE)     \
@@ -179,7 +180,7 @@ args::Flag arg_dirty16{parser, "dirty-upper", "AVX-512 only: the 512-bit zmm16 r
     {"dirty-upper16"}};
 args::ValueFlag<std::string> arg_focus{parser, "TEST-ID", "Run only the specified test (by ID)", {"test"}};
 args::ValueFlag<std::string> arg_spec{parser, "SPEC", "Run a specific type of test specified by a specification string", {"spec"}};
-args::ValueFlag<size_t> arg_iters{parser, "ITERS", "Run the test loop ITERS times (default 100000)", {"iters"}, 100000};
+args::ValueFlag<size_t> arg_iters{parser, "ITERS", "Run the test loop ITERS times (default 2000000)", {"iters"}, 2000000};
 args::ValueFlag<int> arg_min_threads{parser, "MIN", "The minimum number of threads to use", {"min-threads"}, 1};
 args::ValueFlag<int> arg_max_threads{parser, "MAX", "The maximum number of threads to use", {"max-threads"}};
 args::ValueFlag<uint64_t> arg_warm_ms{parser, "MILLISECONDS", "Warmup milliseconds for each thread after pinning (default 100)", {"warmup-ms"}, 100};
@@ -529,13 +530,15 @@ std::vector<test_spec> make_from_spec(ISA, std::vector<int> cpus) {
         if (halves.size() > 2) {
             throw std::runtime_error(std::string("bad spec syntax in element: '" + elem + "'"));
         }
-        int count = (halves.size() == 1 ? 1 : std::atoi(halves[1].c_str()));
+        int count = 1;
+        int cpu = (halves.size() == 1 ? 1 : std::atoi(halves[1].c_str()));
         const test_func* test = find_one_test(halves[0]);
         if (!test) {
             throw std::runtime_error("couldn't find test: '" + halves[0] + "'");
         }
 
         spec.thread_funcs.insert(spec.thread_funcs.end(), count, *test);
+        cpu_affinity.push_back(cpu);
     }
 
     if (spec.count() > cpus.size()) {
@@ -635,7 +638,10 @@ struct test_thread {
     void operator()() {
         // if (verbose) printf("Running test in thread %lu, this = %p\n", id, this);
         if (!arg_no_pin) {
-            pin_to_cpu(id);
+            if(cpu_affinity.empty())
+                pin_to_cpu(id);
+            else
+                pin_to_cpu(cpu_affinity[id]);
         }
         aperf_ghz aperf_timer;
         outer_timer& outer = use_aperf ? static_cast<outer_timer&>(aperf_timer) : dummy_outer::dummy;
