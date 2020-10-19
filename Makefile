@@ -1,3 +1,4 @@
+CXX=g++-10.2
 include config.mk
 
 # rebuild when makefile changes
